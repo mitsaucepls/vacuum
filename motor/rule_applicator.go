@@ -39,6 +39,7 @@ type ruleContext struct {
 	specNodeUnresolved *yaml.Node
 	builtinFunctions   functions.Functions
 	ruleResults        *[]model.RuleFunctionResult
+	ignoredResults     *[]model.RuleFunctionResult
 	errors             *[]error
 	index              *index.SpecIndex
 	specInfo           *datamodel.SpecInfo
@@ -106,6 +107,7 @@ func buildLocationString(line, column int) string {
 type RuleSetExecutionResult struct {
 	RuleSetExecution *RuleSetExecution                // The execution struct that was used invoking the result.
 	Results          []model.RuleFunctionResult       // The results of the execution.
+	IgnoredResults   []model.RuleFunctionResult       // Results that were ignored due to inline ignore directives.
 	Index            *index.SpecIndex                 // The index that was created from the specification, used by the rules.
 	SpecInfo         *datamodel.SpecInfo              // A reference to the SpecInfo object, used by all the rules.
 	Errors           []error                          // Any errors that were returned.
@@ -128,6 +130,7 @@ func ApplyRulesToRuleSet(execution *RuleSetExecution) *RuleSetExecutionResult {
 	now := time.Now()
 	builtinFunctions := functions.MapBuiltinFunctions()
 	var ruleResults []model.RuleFunctionResult
+	var ignoredResults []model.RuleFunctionResult
 	var ruleWaitGroup sync.WaitGroup
 	if execution.RuleSet != nil && execution.RuleSet.Rules != nil {
 		ruleWaitGroup.Add(len(execution.RuleSet.Rules))
@@ -752,6 +755,7 @@ func ApplyRulesToRuleSet(execution *RuleSetExecution) *RuleSetExecutionResult {
 					specNodeUnresolved: specUnresolved,
 					builtinFunctions:   builtinFunctions,
 					ruleResults:        &ruleResults,
+					ignoredResults:     &ignoredResults,
 					errors:             &errs,
 					specInfo:           info,
 					index:              ruleIndex,
@@ -808,6 +812,7 @@ func ApplyRulesToRuleSet(execution *RuleSetExecution) *RuleSetExecutionResult {
 	return &RuleSetExecutionResult{
 		RuleSetExecution: execution,
 		Results:          ruleResults,
+		IgnoredResults:   ignoredResults,
 		Index:            indexResolved,
 		SpecInfo:         specInfo,
 		Errors:           errs,
@@ -988,8 +993,11 @@ func buildResults(ctx ruleContext, ruleAction model.RuleAction, nodes []*yaml.No
 				lock.Unlock()
 			}
 		} else {
+			// Filter out ignore nodes to prevent them from being processed by other rules
+			filteredNodes := filterIgnoreNodes(nodes)
+
 			// iterate through nodes and supply them one at a time so we don't pollute each run
-			for _, node := range nodes {
+			for _, node := range filteredNodes {
 
 				// if this rule is designed for a different version, skip it.
 				if len(ctx.rule.Formats) > 0 {
@@ -1002,6 +1010,22 @@ func buildResults(ctx ruleContext, ruleAction model.RuleAction, nodes []*yaml.No
 					if ctx.specInfo.SpecFormat != "" && !match {
 						continue // does not apply to this spec.
 					}
+				}
+
+				if checkInlineIgnore(node, ctx.rule.Id) {
+					ignoredResult := model.RuleFunctionResult{
+						Message:      "Rule ignored due to inline ignore directive",
+						RuleId:       ctx.rule.Id,
+						RuleSeverity: ctx.rule.Severity,
+						Rule:         ctx.rule,
+						StartNode:    node,
+						EndNode:      node,
+					}
+					
+					lock.Lock()
+					*ctx.ignoredResults = append(*ctx.ignoredResults, ignoredResult)
+					lock.Unlock()
+					continue
 				}
 
 				runRuleResults := ruleFunction.RunRule([]*yaml.Node{node}, rfc)

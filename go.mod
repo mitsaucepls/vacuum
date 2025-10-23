@@ -16,9 +16,9 @@ require (
 	github.com/json-iterator/go v1.1.12
 	github.com/mitchellh/mapstructure v1.5.0
 	github.com/muesli/termenv v0.16.0
-	github.com/pb33f/doctor v0.0.39
+	github.com/pb33f/doctor v0.0.40
 	github.com/pb33f/jsonpath v0.1.2
-	github.com/pb33f/libopenapi v0.28.0
+	github.com/pb33f/libopenapi v0.28.1
 	github.com/pb33f/libopenapi-validator v0.6.3
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2
 	github.com/sourcegraph/conc v0.3.1-0.20240121214520-5f936abd7ae8
